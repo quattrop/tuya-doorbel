@@ -1,21 +1,13 @@
-ARG BUILD_FROM
-FROM $BUILD_FROM
+FROM node:18-alpine
 
-# Instalace Node.js
-RUN apk add --no-cache nodejs npm
-
-# Nastavení pracovního adresáře
 WORKDIR /app
 
-# Nejprve kopírujeme definice závislostí (kvůli cache)
-COPY package.json ./
-
 # Instalace závislostí
+COPY package.json ./
 RUN npm install --production
 
-# Kopírování zbytku aplikace (index.js a run.sh)
+# Kopírování aplikace
 COPY . .
 
-RUN chmod a+x run.sh
-
-CMD [ "./run.sh" ]
+# Spouštíme přímo Node.js, žádný run.sh
+CMD [ "node", "index.js" ]
