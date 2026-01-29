@@ -42,9 +42,8 @@ device.on('connected', () => {
     isConnected = true;
 
     // Agresivní refresh je nutný, aby zvonek neukončil spojení
-    console.log('Posílám Refresh...');
-    device.refresh({ schema: true })
-        .catch(e => {});
+//    console.log('Posílám Refresh...');
+//    device.refresh({ schema: true }).catch(e => {});
 });
 
 device.on('disconnected', () => {
