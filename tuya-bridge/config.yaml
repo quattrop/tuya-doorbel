@@ -1,5 +1,5 @@
 name: "Tuya Doorbell Bridge"
-version: "1.0"
+version: "1.0.1"
 slug: "tuya_doorbell"
 description: "Bridge pro lokální Tuya zvonek"
 url: "https://github.com/nimda95/hass-tuya-doorbell-notification"
