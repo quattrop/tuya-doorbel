@@ -2,7 +2,7 @@ const TuyAPI = require('tuyapi');
 const axios = require('axios');
 const fs = require('fs');
 
-console.log('--- Tuya Doorbell Bridge (Verze 3.4) ---');
+console.log('--- Tuya Doorbell Bridge (FINAL: Verze 3.3 + Refresh) ---');
 
 let config = {};
 try {
@@ -21,31 +21,29 @@ const device = new TuyAPI({
     id: DEVICE_ID,
     key: LOCAL_KEY,
     ip: DEVICE_IP,
-    version: '3.4',
+    version: '3.3',  // <--- VRACÍME SE K 3.3 (dle logu je to správně)
     issueGetOnConnect: false 
 });
 
-const TRIGGER_IDS = ['154', '185', '136'];
+const TRIGGER_IDS = ['154', '185', '136', '115']; // Přidal jsem i 115 pro jistotu
 let isConnected = false;
 
 async function connectionLoop() {
     if (isConnected) return;
-
     try {
         await device.connect(); 
     } catch (err) {
-        // Ignorujeme timeouty při spánku
         setTimeout(connectionLoop, 1000);
     }
 }
 
 device.on('connected', () => {
-    console.log('>>> PŘIPOJENO! (v3.4)');
+    console.log('>>> PŘIPOJENO! (v3.3)');
     isConnected = true;
 
-    // Zkusíme si říct o data, dokud je spojení živé
+    // Agresivní refresh je nutný, aby zvonek neukončil spojení
+    console.log('Posílám Refresh...');
     device.refresh({ schema: true })
-        .then(() => console.log('Refresh request odeslán.'))
         .catch(e => {});
 });
 
@@ -56,16 +54,21 @@ device.on('disconnected', () => {
 });
 
 device.on('error', (err) => {
-    console.log('Error:', err.message);
+    // Pokud je chyba HMAC, vypíšeme ji výrazně, znamená to špatný klíč
+    if (err.message.includes('HMAC')) {
+        console.error('!!! KRITICKÁ CHYBA: HMAC mismatch = ŠPATNÝ LOCAL KEY !!!');
+        console.error('Ověřte prosím Local Key v konfiguraci.');
+    } else {
+        console.log('Error:', err.message);
+    }
     isConnected = false;
 });
 
 device.on('data', data => {
-    console.log('DATA PŘIJATA:', JSON.stringify(data)); // <--- Tady musíme něco vidět
+    console.log('DATA PŘIJATA:', JSON.stringify(data));
 
     if (!data || !data.dps) return;
     
-    // Pro jistotu logujeme každou změnu DPS, abychom našli to správné ID
     if (data.dps) {
         console.log("Změna DPS:", data.dps);
     }
