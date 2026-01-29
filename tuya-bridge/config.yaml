@@ -1,5 +1,5 @@
 name: "Tuya Doorbell Bridge"
-version: "1.0.12"
+version: "1.0.13"
 slug: "tuya_doorbell"
 description: "Bridge for local Tuya doorbell"
 host_network: true
@@ -13,8 +13,10 @@ options:
   tuya_local_key: ""
   tuya_device_ip: ""
   webhook_url: ""
+  debug_logging: false
 schema:
   tuya_device_id: str
   tuya_local_key: str
   tuya_device_ip: str
   webhook_url: str
+  debug_logging: bool
