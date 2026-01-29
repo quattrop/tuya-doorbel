@@ -2,9 +2,8 @@ const TuyAPI = require('tuyapi');
 const axios = require('axios');
 const fs = require('fs');
 
-console.log('--- Tuya Doorbell Bridge (Deep Sleep Mode) ---');
+console.log('--- Tuya Doorbell Bridge (Verze 3.4) ---');
 
-// --- Načtení Configu ---
 let config = {};
 try {
     const optionsRaw = fs.readFileSync('/data/options.json', 'utf8');
@@ -18,78 +17,68 @@ const LOCAL_KEY = config.tuya_local_key ? config.tuya_local_key.trim() : process
 const DEVICE_IP = config.tuya_device_ip ? config.tuya_device_ip.trim() : undefined;
 const WEBHOOK_URL = config.webhook_url ? config.webhook_url.trim() : process.env.WEBHOOK_URL;
 
-if (!DEVICE_IP || DEVICE_IP === "0.0.0.0") {
-    console.error("CHYBA: Pro tento režim MUSÍŠ zadat IP adresu zvonku (192.168.0.XXX)!");
-    process.exit(1);
-}
-
-// Inicializace API
 const device = new TuyAPI({
     id: DEVICE_ID,
     key: LOCAL_KEY,
     ip: DEVICE_IP,
-    version: '3.3',
-    issueGetOnConnect: false
+    version: '3.4',
+    issueGetOnConnect: false 
 });
 
-// DPS ID pro zvonění
 const TRIGGER_IDS = ['154', '185', '136'];
 let isConnected = false;
 
-// --- Hlavní smyčka připojování ---
 async function connectionLoop() {
-    if (isConnected) return; // Pokud jsme připojení, nic neděláme
+    if (isConnected) return;
 
     try {
-        // Pokus o připojení s krátkým timeoutem (aby to neviselo)
-        // TuyAPI nemá timeout v options, řešíme to wrapperem nebo spoléháme na reject
         await device.connect(); 
     } catch (err) {
-        // Zvonek spí = Timeout nebo Unreachable. To je OČEKÁVANÝ STAV.
-        // Nebudeme logovat každou chybu, ať nezasviníme log.
-        // Jen pokud je to jiná chyba než timeout, vypíšeme ji.
-        if (err.message && !err.message.includes('timeout') && !err.message.includes('EHOSTUNREACH')) {
-             console.log('Chyba spojení (sleep?):', err.message);
-        }
-        
-        // Zkusíme to znovu za 1 vteřinu
+        // Ignorujeme timeouty při spánku
         setTimeout(connectionLoop, 1000);
     }
 }
 
-// --- Event Listenery ---
-
 device.on('connected', () => {
-    console.log('>>> PŘIPOJENO! Zvonek se probudil.');
+    console.log('>>> PŘIPOJENO! (v3.4)');
     isConnected = true;
+
+    // Zkusíme si říct o data, dokud je spojení živé
+    device.refresh({ schema: true })
+        .then(() => console.log('Refresh request odeslán.'))
+        .catch(e => {});
 });
 
 device.on('disconnected', () => {
-    console.log('<<< Odpojeno. Zvonek asi usnul. Vracím se do čekací smyčky...');
+    console.log('<<< Odpojeno.');
     isConnected = false;
-    setTimeout(connectionLoop, 1000); // Okamžitě začni zkoušet znovu
+    setTimeout(connectionLoop, 1000);
 });
 
 device.on('error', (err) => {
-    // Tady chytáme chyby po připojení.
-    // Ignorujeme je, reconnect řeší 'disconnected' nebo smyčka
+    console.log('Error:', err.message);
     isConnected = false;
 });
 
 device.on('data', data => {
-    console.log('DATA:', JSON.stringify(data));
+    console.log('DATA PŘIJATA:', JSON.stringify(data)); // <--- Tady musíme něco vidět
 
     if (!data || !data.dps) return;
+    
+    // Pro jistotu logujeme každou změnu DPS, abychom našli to správné ID
+    if (data.dps) {
+        console.log("Změna DPS:", data.dps);
+    }
+
     const isRingEvent = TRIGGER_IDS.some(id => data.dps.hasOwnProperty(id));
 
     if (isRingEvent) {
-        console.log(`!!! ZVONĚNÍ DETEKOVÁNO !!! Volám webhook...`);
+        console.log(`!!! ZVONÍ !!! Volám webhook...`);
         axios.post(WEBHOOK_URL, { event: 'ring', raw_data: data.dps })
             .then(() => console.log('Webhook OK.'))
             .catch(err => console.error('Webhook Error:', err.message));
     }
 });
 
-// Start
 console.log(`Startuji smyčku na IP: ${DEVICE_IP}`);
 connectionLoop();
