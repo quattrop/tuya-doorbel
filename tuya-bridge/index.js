@@ -5,13 +5,12 @@ const fs = require('fs');
 // Pomocná funkce pro časová razítka
 function ts() {
     const now = new Date();
-    const time = now.toTimeString().split(' ')[0]; // HH:MM:SS
-    const ms = String(now.getMilliseconds()).padStart(3, '0');
-    return `[${time}.${ms}]`;
+    return `[${now.toTimeString().split(' ')[0]}]`;
 }
 
-console.log(`${ts()} --- Tuya Doorbell Bridge (TIMESTAMPS + SPY MODE) ---`);
+console.log(`${ts()} --- Tuya Doorbell Bridge (FINAL PRODUCTION) ---`);
 
+// --- 1. Načtení konfigurace ---
 let config = {};
 try {
     const optionsRaw = fs.readFileSync('/data/options.json', 'utf8');
@@ -25,81 +24,90 @@ const LOCAL_KEY = config.tuya_local_key ? config.tuya_local_key.trim() : process
 const DEVICE_IP = config.tuya_device_ip ? config.tuya_device_ip.trim() : undefined;
 const WEBHOOK_URL = config.webhook_url ? config.webhook_url.trim() : process.env.WEBHOOK_URL;
 
+// --- 2. Inicializace (Verze 3.3 se osvědčila) ---
 const device = new TuyAPI({
     id: DEVICE_ID,
     key: LOCAL_KEY,
     ip: DEVICE_IP,
-    version: '3.3', // Zůstáváme u 3.3, protože logy ukazovaly hex 33.2e.33
+    version: '3.3', 
     issueGetOnConnect: false
 });
 
-const TRIGGER_IDS = ['154', '185', '136', '115', '101'];
+// DPS, které značí zvonění. 154 je hlavní (obsahuje fotku).
+const TRIGGER_IDS = ['154', '185', '136']; 
 let isConnected = false;
 
+// --- 3. Smyčka pro připojení ---
 async function connectionLoop() {
     if (isConnected) return;
     try {
-        // Zkoušíme připojit
         await device.connect(); 
     } catch (err) {
-        // Timeouty při spánku nelogujeme, jen zpomalují výpis
-        if (!err.message.includes('timeout') && !err.message.includes('ECONNREFUSED')) {
-             console.log(`${ts()} Connection Error: ${err.message}`);
-        }
+        // Tiché ignorování timeoutů při spánku
         setTimeout(connectionLoop, 1000); 
     }
 }
 
-// --- LISTENERY ---
+// --- 4. Event Listenery ---
 
 device.on('connected', () => {
-    console.log(`${ts()} >>> PŘIPOJENO! Spojení navázáno.`);
+    console.log(`${ts()} >>> PŘIPOJENO. Čekám na data...`);
     isConnected = true;
-    
-    // Zkusíme pasivně čekat. Pokud nic nepřijde do 500ms, zkusíme refresh
-    // Ale zatím jen posloucháme.
+    // Refresh nevoláme, zařízení posílá 'dp-refresh' samo po připojení (ověřeno v logu)
 });
 
 device.on('disconnected', () => {
-    console.log(`${ts()} <<< ODPOJENO. Zvonek ukončil spojení.`);
+    // Jen krátká hláška, ať neplníme log
+    // console.log(`${ts()} <<< Odpojeno.`); 
     isConnected = false;
     setTimeout(connectionLoop, 1000);
 });
 
 device.on('error', (err) => {
-    // Detailní výpis chyby
-    console.log(`${ts()} ERROR Socket: ${err.message}`);
+    // Logujeme jen neobvyklé chyby
+    if (!err.message.includes('timeout') && !err.message.includes('ECONNREFUSED')) {
+        console.error(`${ts()} Error: ${err.message}`);
+    }
     isConnected = false;
 });
 
-// Odchytáváme úplně všechna data
-device.on('data', data => {
-    console.log(`${ts()} EVENT [DATA]: ${JSON.stringify(data)}`);
-    checkAndFireWebhook(data);
-});
-
-device.on('dp-refresh', data => {
-    console.log(`${ts()} EVENT [DP-REFRESH]: ${JSON.stringify(data)}`);
-    checkAndFireWebhook(data);
-});
-
-device.on('heartbeat', data => {
-    console.log(`${ts()} EVENT [HEARTBEAT]: ${JSON.stringify(data)}`);
-});
-
-function checkAndFireWebhook(data) {
+// Funkce pro zpracování dat (společná pro 'data' i 'dp-refresh')
+function handleData(data) {
     if (!data || !data.dps) return;
 
-    console.log(`${ts()} OBSAH DPS: ${JSON.stringify(data.dps)}`);
+    // Zkontrolujeme, zda data obsahují trigger (zvonění)
+    const triggerId = TRIGGER_IDS.find(id => data.dps.hasOwnProperty(id));
 
-    const isRingEvent = TRIGGER_IDS.some(id => data.dps.hasOwnProperty(id));
-    if (isRingEvent) {
-        console.log(`${ts()} !!! ZVONÍ !!! Volám webhook...`);
-        axios.post(WEBHOOK_URL, { event: 'ring', raw_data: data.dps })
-            .then(() => console.log(`${ts()} Webhook OK.`))
-            .catch(err => console.error(`${ts()} Webhook Error: ${err.message}`));
+    if (triggerId) {
+        console.log(`${ts()} !!! ZVONĚNÍ DETEKOVÁNO (DPS ${triggerId}) !!!`);
+        
+        let payload = {
+            event: 'ring',
+            battery: data.dps['145'] || 'unknown' // Přibalíme i stav baterie, když tam je
+        };
+
+        // EXTRABUŘT: Pokud je to DPS 154, dekódujeme obrázek
+        if (triggerId === '154' && typeof data.dps['154'] === 'string') {
+            try {
+                // Dekódování Base64 -> String
+                const imageUrl = Buffer.from(data.dps['154'], 'base64').toString('utf8');
+                console.log(`${ts()} + Nalezena URL obrázku!`);
+                payload.image = imageUrl;
+            } catch (e) {
+                console.error('Chyba dekódování obrázku');
+            }
+        }
+
+        // Odeslání webhooku
+        axios.post(WEBHOOK_URL, payload)
+            .then(() => console.log(`${ts()} -> Webhook odeslán.`))
+            .catch(err => console.error(`${ts()} -> Chyba webhooku: ${err.message}`));
     }
 }
 
-console.log(`${ts()} Startuji smyčku na IP: ${DEVICE_IP}`);
+device.on('data', handleData);
+device.on('dp-refresh', handleData);
+
+// Start
+console.log(`${ts()} Startuji službu na IP: ${DEVICE_IP}`);
 connectionLoop();
