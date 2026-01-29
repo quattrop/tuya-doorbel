@@ -1,10 +1,10 @@
 name: "Tuya Doorbell Bridge"
-version: "1.0.3"
+version: "1.0.4"
 slug: "tuya_doorbell"
 description: "Bridge pro lokální Tuya zvonek"
-url: "https://github.com/nimda95/hass-tuya-doorbell-notification"
 arch:
-  - aarch64  # RPI 4 je 64bit
+  - aarch64
+  - amd64
   - armv7
 startup: application
 options:
