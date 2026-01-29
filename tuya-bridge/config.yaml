@@ -1,5 +1,5 @@
 name: "Tuya Doorbell Bridge"
-version: "1.0.4"
+version: "1.0.5"
 slug: "tuya_doorbell"
 description: "Bridge pro lokální Tuya zvonek"
 arch:

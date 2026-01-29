@@ -20,14 +20,23 @@ try {
     console.error("ERROR: Chyba při čtení konfigurace:", e.message);
 }
 
-// 2. Mapování proměnných s kontrolou
-// Trim() odstraní případné mezery na začátku/konci, které tam mohl uživatel omylem vložit
+// 2. Mapování proměnných
 const DEVICE_ID = config.tuya_device_id ? config.tuya_device_id.trim() : process.env.TUYA_DEVICE_ID;
 const LOCAL_KEY = config.tuya_local_key ? config.tuya_local_key.trim() : process.env.TUYA_LOCAL_KEY;
-const DEVICE_IP = (config.tuya_device_ip && config.tuya_device_ip.length > 5) ? config.tuya_device_ip.trim() : undefined;
 const WEBHOOK_URL = config.webhook_url ? config.webhook_url.trim() : process.env.WEBHOOK_URL;
 
-console.log(`DEBUG: Použité hodnoty -> ID: '${DEVICE_ID}', IP: '${DEVICE_IP}', Key: ${LOCAL_KEY ? '******' : 'MISSING'}`);
+// --- ÚPRAVA: Logika pro ignorování IP ---
+let rawIp = config.tuya_device_ip ? config.tuya_device_ip.trim() : "";
+
+// Pokud je v poli napsáno "0.0.0.0" nebo "AUTO", ignorujeme to -> spustí se Auto-discovery
+if (rawIp === "0.0.0.0" || rawIp.toUpperCase() === "AUTO") {
+    rawIp = undefined;
+}
+
+const DEVICE_IP = (rawIp && rawIp.length > 5) ? rawIp : undefined;
+// ----------------------------------------
+
+console.log(`DEBUG: Použité hodnoty -> ID: '${DEVICE_ID}', IP: '${DEVICE_IP || 'Auto-discovery (čekám na signál)'}'`);
 
 // 3. Záchranná brzda před pádem
 if (!DEVICE_ID) {
